@@ -26,7 +26,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Обработчик нажатий на кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # подтверждаем нажатие
+    await query.answer()
 
     if query.data == 'prices':
         text = "💳 Цены:\n1 занятие — 800₴\nАбонемент на 10 занятий — 7000₴"
