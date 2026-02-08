@@ -1,6 +1,7 @@
 import os
 import requests
 from datetime import datetime, timedelta
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -102,16 +103,23 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text)
 
 # =============================
-# Запуск бота и планировщика
+# Главная функция для запуска
 # =============================
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button))
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
 
-# Планировщик проверяет записи каждый час
-scheduler = AsyncIOScheduler()
-scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
-scheduler.start()
+    # Планировщик проверяет записи каждый час
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
+    scheduler.start()
 
-print("Bot started")
-app.run_polling()
+    print("Bot started")
+    await app.run_polling()
+
+# =============================
+# Запуск
+# =============================
+if __name__ == "__main__":
+    asyncio.run(main())
