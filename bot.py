@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import asyncio
 
 # =============================
 # Переменные окружения
@@ -38,6 +37,7 @@ def get_upcoming_appointments():
     now = datetime.now()
     two_hours_later = now + timedelta(hours=2)
     
+    # Берём записи, которые начинаются примерно через 2 часа ±30 минут
     upcoming = [
         a for a in appointments
         if two_hours_later - timedelta(minutes=30) <= datetime.fromisoformat(a["start_at"][:-1]) <= two_hours_later + timedelta(minutes=30)
@@ -57,7 +57,7 @@ async def send_appointment_reminders(app):
 
         reminder_key = f"{client_id}_{appt['id']}"
         if reminder_key in sent_reminders:
-            continue  # уже отправлено
+            continue
 
         text = f"⏰ Привет, {client_name}! Напоминаем, что ваше занятие начинается через 2 часа: {start_time}."
 
@@ -115,30 +115,15 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button))
 
 # =============================
-# Планировщик внутри loop приложения
+# Планировщик запускается через run_async
 # =============================
-async def start_scheduler():
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
-    scheduler.start()
+scheduler = AsyncIOScheduler()
+scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
+app.run_async(scheduler.start)  # вот так безопасно запускаем планировщик в loop Telegram
 
 # =============================
-# Запуск бота с планировщиком
+# Запуск бота
 # =============================
-async def main():
-    # запускаем планировщик
-    await start_scheduler()
-    print("Bot started")
-    await app.run_polling()
+print("Bot started")
+app.run_polling()
 
-# =============================
-# Для среды с уже запущенным loop
-# =============================
-if __name__ == "__main__":
-    try:
-        asyncio.get_running_loop()
-        # loop уже есть → запускаем через create_task
-        asyncio.create_task(main())
-    except RuntimeError:
-        # loop ещё нет → запускаем стандартно
-        asyncio.run(main())
