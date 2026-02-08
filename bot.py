@@ -1,7 +1,6 @@
 import os
 import requests
 from datetime import datetime, timedelta
-import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +19,7 @@ if not TOKEN or not ALTEG_API_KEY or not ALTEG_BUSINESS_ID:
 # Хранение chat_id клиентов
 # =============================
 clients = {}  # {altegio_client_id: chat_id}
+sent_reminders = set()  # чтобы не отправлять дубли
 
 # =============================
 # Получение всех предстоящих записей из Altegio
@@ -54,12 +54,18 @@ async def send_appointment_reminders(app):
         client_name = appt["client"]["name"]
         chat_id = clients.get(client_id)
         start_time = datetime.fromisoformat(appt["start_at"][:-1]).strftime("%H:%M %d.%m.%Y")
-        
+
+        # уникальный ключ для каждой записи
+        reminder_key = f"{client_id}_{appt['id']}"
+        if reminder_key in sent_reminders:
+            continue  # уже отправлено
+
         text = f"⏰ Привет, {client_name}! Напоминаем, что ваше занятие начинается через 2 часа: {start_time}."
 
         if chat_id:
             try:
                 await app.bot.send_message(chat_id=chat_id, text=text)
+                sent_reminders.add(reminder_key)
                 print(f"✅ Напоминание отправлено {client_name}")
             except Exception as e:
                 print("❌ Ошибка при отправке:", e)
@@ -69,7 +75,7 @@ async def send_appointment_reminders(app):
 # =============================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    clients.setdefault(chat_id, chat_id)  # пример хранения chat_id
+    clients.setdefault(chat_id, chat_id)
     
     keyboard = [
         [InlineKeyboardButton("📅 Розклад занять", url="https://n1371162.alteg.io/")],
@@ -103,23 +109,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text)
 
 # =============================
-# Главная функция для запуска
+# Создание приложения
 # =============================
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-
-    # Планировщик проверяет записи каждый час
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
-    scheduler.start()
-
-    print("Bot started")
-    await app.run_polling()
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(button))
 
 # =============================
-# Запуск
+# Планировщик
 # =============================
-if __name__ == "__main__":
-    asyncio.run(main())
+scheduler = AsyncIOScheduler()
+scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
+scheduler.start()
+
+# =============================
+# Запуск бота
+# =============================
+print("Bot started")
+app.run_polling()
+
