@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import asyncio
 
 # =============================
 # Переменные окружения
@@ -13,7 +14,7 @@ ALTEG_API_KEY = os.getenv("ALTEG_API_KEY")
 ALTEG_BUSINESS_ID = os.getenv("ALTEG_BUSINESS_ID")
 
 if not TOKEN or not ALTEG_API_KEY or not ALTEG_BUSINESS_ID:
-    raise ValueError("❌ Ошибка: BOT_TOKEN, ALTEG_API_KEY или ALTEG_BUSINESS_ID не заданы!")
+    raise ValueError("❌ BOT_TOKEN, ALTEG_API_KEY или ALTEG_BUSINESS_ID не заданы!")
 
 # =============================
 # Хранение chat_id клиентов
@@ -22,7 +23,7 @@ clients = {}  # {altegio_client_id: chat_id}
 sent_reminders = set()  # чтобы не отправлять дубли
 
 # =============================
-# Получение всех предстоящих записей из Altegio
+# Получение записей из Altegio
 # =============================
 def get_upcoming_appointments():
     url = f"https://api.alteg.io/v1/appointments?business={ALTEG_BUSINESS_ID}"
@@ -37,7 +38,6 @@ def get_upcoming_appointments():
     now = datetime.now()
     two_hours_later = now + timedelta(hours=2)
     
-    # Фильтруем записи, которые начнутся примерно через 2 часа
     upcoming = [
         a for a in appointments
         if two_hours_later - timedelta(minutes=30) <= datetime.fromisoformat(a["start_at"][:-1]) <= two_hours_later + timedelta(minutes=30)
@@ -55,7 +55,6 @@ async def send_appointment_reminders(app):
         chat_id = clients.get(client_id)
         start_time = datetime.fromisoformat(appt["start_at"][:-1]).strftime("%H:%M %d.%m.%Y")
 
-        # уникальный ключ для каждой записи
         reminder_key = f"{client_id}_{appt['id']}"
         if reminder_key in sent_reminders:
             continue  # уже отправлено
@@ -116,15 +115,30 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button))
 
 # =============================
-# Планировщик
+# Планировщик внутри loop приложения
 # =============================
-scheduler = AsyncIOScheduler()
-scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
-scheduler.start()
+async def start_scheduler():
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(lambda: send_appointment_reminders(app), 'interval', hours=1)
+    scheduler.start()
 
 # =============================
-# Запуск бота
+# Запуск бота с планировщиком
 # =============================
-print("Bot started")
-app.run_polling()
+async def main():
+    # запускаем планировщик
+    await start_scheduler()
+    print("Bot started")
+    await app.run_polling()
 
+# =============================
+# Для среды с уже запущенным loop
+# =============================
+if __name__ == "__main__":
+    try:
+        asyncio.get_running_loop()
+        # loop уже есть → запускаем через create_task
+        asyncio.create_task(main())
+    except RuntimeError:
+        # loop ещё нет → запускаем стандартно
+        asyncio.run(main())
